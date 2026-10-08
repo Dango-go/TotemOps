@@ -31,9 +31,15 @@ locations: Dict[str, LocationRecord] = {
     "courier-01": LocationRecord(courier_id="courier-01", latitude=50.4501, longitude=30.5234, speed_kmh=18.5, heading=90.0, updated_at=int(time.time())),
 }
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "geo-tracking"}
+def liveness():
+    return {"status": "SERVING", "service": "geo-tracking", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "geo-tracking"}
 
 @app.post("/api/v1/geo/location", response_model=LocationRecord)
 def update_location(loc: LocationUpdate):

@@ -3,6 +3,7 @@
 .vscode/
 *.swp
 *.DS_Store
+plan.md
 
 # Python
 .venv/
@@ -13,9 +14,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-
-# Go
-bin/
-*.exe
-*.test
-*.out
+# Databases
+*.db
+*.sqlite
+*.sqlite3

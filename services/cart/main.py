@@ -68,9 +68,15 @@ def build_cart_response(user_id: str) -> CartResponse:
         updated_at=c["updated_at"],
     )
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "cart"}
+def liveness():
+    return {"status": "SERVING", "service": "cart", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "cart"}
 
 @app.get("/api/v1/cart/{user_id}", response_model=CartResponse)
 def get_cart(user_id: str):

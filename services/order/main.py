@@ -2,9 +2,11 @@ import os
 import time
 import uuid
 import logging
-from typing import Dict, List, Optional
+from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Response, status
+from sqlalchemy import create_engine, Column, String, Integer, Float, text
+from sqlalchemy.orm import declarative_base, sessionmaker
 import httpx
 import uvicorn
 
@@ -13,6 +15,8 @@ logger = logging.getLogger("order")
 
 app = FastAPI(title="Order Service", version="1.0.0")
 PORT = int(os.environ.get("PORT", "8014"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./order.db")
+START_TIME = time.time()
 
 # Downstream URLs
 PRICING_URL = os.environ.get("PRICING_URL", "http://localhost:8003")
@@ -23,11 +27,46 @@ DISPATCH_URL = os.environ.get("DISPATCH_URL", "http://localhost:8009")
 NOTIFICATION_URL = os.environ.get("NOTIFICATION_URL", "http://localhost:8011")
 ANALYTICS_URL = os.environ.get("ANALYTICS_URL", "http://localhost:8013")
 
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class OrderModel(Base):
+    __tablename__ = "orders"
+    order_id = Column(String, primary_key=True, index=True)
+    customer_id = Column(String, index=True, nullable=False)
+    restaurant_id = Column(String, nullable=False)
+    subtotal_cents = Column(Integer, nullable=False)
+    delivery_fee_cents = Column(Integer, nullable=False)
+    discount_cents = Column(Integer, default=0)
+    total_cents = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default="PAID")
+    delivery_address = Column(String, nullable=False)
+    delivery_lat = Column(Float, nullable=False)
+    delivery_lon = Column(Float, nullable=False)
+    courier_id = Column(String, nullable=True)
+    created_at = Column(Integer, nullable=False)
+    updated_at = Column(Integer, nullable=False)
+
+class OrderItemModel(Base):
+    __tablename__ = "order_items"
+    id = Column(String, primary_key=True)
+    order_id = Column(String, index=True, nullable=False)
+    item_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    price_cents = Column(Integer, nullable=False)
+
+Base.metadata.create_all(bind=engine)
+
 class OrderItem(BaseModel):
     item_id: str
     name: str
     quantity: int
     price_cents: int
+
+    class Config:
+        from_attributes = True
 
 class CreateOrderRequest(BaseModel):
     customer_id: str
@@ -61,12 +100,26 @@ class OrderResponse(BaseModel):
     created_at: int
     updated_at: int
 
-orders_store: Dict[str, OrderResponse] = {}
+    class Config:
+        from_attributes = True
 
+# Probes
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "order"}
+def liveness():
+    return {"status": "SERVING", "service": "order", "uptime_seconds": int(time.time() - START_TIME)}
 
+@app.get("/readyz")
+def readiness(response: Response):
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "READY", "service": "order", "database": "CONNECTED"}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "NOT_READY", "service": "order", "database": "DISCONNECTED", "error": str(e)}
+
+# API
 @app.post("/api/v1/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(req: CreateOrderRequest):
     order_id = f"ord-{uuid.uuid4().hex[:8]}"
@@ -182,7 +235,38 @@ def create_order(req: CreateOrderRequest):
             logger.warning(f"Analytics sink fallback: {e}")
 
     now = int(time.time())
-    order = OrderResponse(
+    with SessionLocal() as db:
+        order_model = OrderModel(
+            order_id=order_id,
+            customer_id=req.customer_id,
+            restaurant_id=req.restaurant_id,
+            subtotal_cents=subtotal,
+            delivery_fee_cents=delivery_fee,
+            discount_cents=discount,
+            total_cents=total,
+            status="PAID",
+            delivery_address=req.delivery_address,
+            delivery_lat=req.delivery_lat or 50.4501,
+            delivery_lon=req.delivery_lon or 30.5234,
+            courier_id=courier_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(order_model)
+
+        for it in req.items:
+            db.add(OrderItemModel(
+                id=f"oi-{uuid.uuid4().hex[:8]}",
+                order_id=order_id,
+                item_id=it.item_id,
+                name=it.name,
+                quantity=it.quantity,
+                price_cents=it.price_cents,
+            ))
+        db.commit()
+
+    logger.info(f"Order {order_id} saved to DB with status PAID")
+    return OrderResponse(
         order_id=order_id,
         customer_id=req.customer_id,
         restaurant_id=req.restaurant_id,
@@ -199,32 +283,62 @@ def create_order(req: CreateOrderRequest):
         created_at=now,
         updated_at=now,
     )
-    orders_store[order_id] = order
-    logger.info(f"Order {order_id} successfully registered with status PAID")
-    return order
 
 @app.get("/api/v1/orders/{order_id}", response_model=OrderResponse)
 def get_order(order_id: str):
-    o = orders_store.get(order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return o
+    with SessionLocal() as db:
+        o = db.query(OrderModel).filter(OrderModel.order_id == order_id).first()
+        if not o:
+            raise HTTPException(status_code=404, detail="Order not found")
+        items = db.query(OrderItemModel).filter(OrderItemModel.order_id == order_id).all()
+        return OrderResponse(
+            order_id=o.order_id,
+            customer_id=o.customer_id,
+            restaurant_id=o.restaurant_id,
+            items=[OrderItem(item_id=it.item_id, name=it.name, quantity=it.quantity, price_cents=it.price_cents) for it in items],
+            subtotal_cents=o.subtotal_cents,
+            delivery_fee_cents=o.delivery_fee_cents,
+            discount_cents=o.discount_cents,
+            total_cents=o.total_cents,
+            status=o.status,
+            delivery_address=o.delivery_address,
+            delivery_lat=o.delivery_lat,
+            delivery_lon=o.delivery_lon,
+            courier_id=o.courier_id,
+            created_at=o.created_at,
+            updated_at=o.updated_at,
+        )
 
 @app.put("/api/v1/orders/{order_id}/status", response_model=OrderResponse)
 def update_order_status(order_id: str, req: UpdateOrderStatusRequest):
-    o = orders_store.get(order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
-    o.status = req.status
-    o.updated_at = int(time.time())
-    logger.info(f"Order {order_id} status updated to {req.status}")
-    return o
+    with SessionLocal() as db:
+        o = db.query(OrderModel).filter(OrderModel.order_id == order_id).first()
+        if not o:
+            raise HTTPException(status_code=404, detail="Order not found")
+        o.status = req.status
+        o.updated_at = int(time.time())
+        db.commit()
+        db.refresh(o)
 
-@app.get("/api/v1/orders", response_model=List[OrderResponse])
-def list_orders(customer_id: Optional[str] = None):
-    if customer_id:
-        return [o for o in orders_store.values() if o.customer_id == customer_id]
-    return list(orders_store.values())
+        items = db.query(OrderItemModel).filter(OrderItemModel.order_id == order_id).all()
+        logger.info(f"Order {order_id} status updated in DB to {req.status}")
+        return OrderResponse(
+            order_id=o.order_id,
+            customer_id=o.customer_id,
+            restaurant_id=o.restaurant_id,
+            items=[OrderItem(item_id=it.item_id, name=it.name, quantity=it.quantity, price_cents=it.price_cents) for it in items],
+            subtotal_cents=o.subtotal_cents,
+            delivery_fee_cents=o.delivery_fee_cents,
+            discount_cents=o.discount_cents,
+            total_cents=o.total_cents,
+            status=o.status,
+            delivery_address=o.delivery_address,
+            delivery_lat=o.delivery_lat,
+            delivery_lon=o.delivery_lon,
+            courier_id=o.courier_id,
+            created_at=o.created_at,
+            updated_at=o.updated_at,
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)

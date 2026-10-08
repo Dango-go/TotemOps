@@ -30,9 +30,15 @@ class NotificationRecord(BaseModel):
 
 notifications: Dict[str, NotificationRecord] = {}
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "notification"}
+def liveness():
+    return {"status": "SERVING", "service": "notification", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "notification"}
 
 @app.post("/api/v1/notifications/send", response_model=NotificationRecord)
 def send_notification(req: SendNotificationRequest):

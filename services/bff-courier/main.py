@@ -23,9 +23,15 @@ class AcceptAssignmentRequest(BaseModel):
 class MarkDeliveredRequest(BaseModel):
     order_id: str
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "bff-courier"}
+def liveness():
+    return {"status": "SERVING", "service": "bff-courier", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "bff-courier"}
 
 @app.post("/api/v1/courier/assignments/accept")
 def accept_assignment(req: AcceptAssignmentRequest):

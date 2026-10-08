@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import List, Optional
 from pydantic import BaseModel
@@ -24,9 +25,15 @@ class RiskEvaluationResponse(BaseModel):
     decision: str
     risk_factors: List[str]
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "fraud"}
+def liveness():
+    return {"status": "SERVING", "service": "fraud", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "fraud"}
 
 @app.post("/api/v1/fraud/evaluate", response_model=RiskEvaluationResponse)
 def evaluate_risk(req: RiskEvaluationRequest):

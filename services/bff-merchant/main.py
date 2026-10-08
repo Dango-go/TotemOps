@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import Optional
 from pydantic import BaseModel
@@ -19,9 +20,15 @@ class UpdateOrderStatusRequest(BaseModel):
     status: str
     notes: Optional[str] = ""
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "bff-merchant"}
+def liveness():
+    return {"status": "SERVING", "service": "bff-merchant", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "bff-merchant"}
 
 @app.get("/api/v1/merchant/restaurants/{restaurant_id}/menu")
 def get_restaurant_menu(restaurant_id: str):

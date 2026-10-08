@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import List, Optional
 from pydantic import BaseModel
@@ -41,9 +42,15 @@ class CheckoutRequest(BaseModel):
     promo_code: Optional[str] = ""
     payment_method: Optional[str] = "card"
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "bff-customer"}
+def liveness():
+    return {"status": "SERVING", "service": "bff-customer", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "bff-customer"}
 
 # Auth
 @app.post("/api/v1/auth/register")

@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import List, Optional
 from pydantic import BaseModel
@@ -34,9 +35,15 @@ BASE_DELIVERY_FEE_CENTS = 5000  # 50 UAH
 PER_KM_FEE_CENTS = 1500         # 15 UAH/km
 ACTIVE_SURGE = 1.2              # 20% surge during peak
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "pricing"}
+def liveness():
+    return {"status": "SERVING", "service": "pricing", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "pricing"}
 
 @app.post("/api/v1/pricing/calculate", response_model=PriceResponse)
 def calculate_order_price(req: CalculatePriceRequest):

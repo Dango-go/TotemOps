@@ -22,9 +22,15 @@ class ETAResponse(BaseModel):
     total_eta_minutes: int
     estimated_delivery_timestamp: int
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "eta"}
+def liveness():
+    return {"status": "SERVING", "service": "eta", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "eta"}
 
 @app.post("/api/v1/eta/estimate", response_model=ETAResponse)
 def estimate_eta(req: EstimateETARequest):

@@ -35,9 +35,15 @@ available_couriers: List[str] = ["courier-01", "courier-02", "courier-03"]
 assignments_by_order: Dict[str, Assignment] = {}
 assignments_by_id: Dict[str, Assignment] = {}
 
+START_TIME = time.time()
+
 @app.get("/healthz")
-def healthz():
-    return {"status": "SERVING", "service": "dispatch"}
+def liveness():
+    return {"status": "SERVING", "service": "dispatch", "uptime_seconds": int(time.time() - START_TIME)}
+
+@app.get("/readyz")
+def readiness():
+    return {"status": "READY", "service": "dispatch"}
 
 @app.post("/api/v1/dispatch/find")
 def find_courier(req: FindCourierRequest):

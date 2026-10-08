@@ -57,8 +57,8 @@ def main():
 
         client = httpx.Client(timeout=10.0)
 
-        # 1. Test Healthz across all 17 services
-        print("\n--- 1. Testing Healthz on all 17 services ---")
+        # 1. Test Healthz & Readyz across all 17 services
+        print("\n--- 1. Testing Healthz & Readyz on all 17 services ---")
         ports = [
             (8001, "identity"), (8002, "catalog"), (8003, "pricing"), (8004, "cart"),
             (8005, "inventory"), (8006, "payment"), (8007, "eta"), (8008, "geo-tracking"),
@@ -67,9 +67,13 @@ def main():
             (8021, "bff-courier"), (8022, "bff-customer")
         ]
         for port, name in ports:
-            r = client.get(f"http://localhost:{port}/healthz")
-            assert r.status_code == 200, f"{name} failed on port {port}"
-            print(f"  ✓ {name} (: {port}) is healthy: {r.json()}")
+            # Test liveness
+            r_live = client.get(f"http://localhost:{port}/healthz")
+            assert r_live.status_code == 200, f"{name} liveness failed on port {port}"
+            # Test readiness (including DB check)
+            r_ready = client.get(f"http://localhost:{port}/readyz")
+            assert r_ready.status_code == 200, f"{name} readiness failed on port {port}: {r_ready.text}"
+            print(f"  ✓ {name:15} (: {port}) Liveness: OK | Readiness: {r_ready.json()}")
 
         # 2. Test Auth via bff-customer
         print("\n--- 2. Customer Auth & Catalog via bff-customer ---")
