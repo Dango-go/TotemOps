@@ -3,6 +3,7 @@
 .vscode/
 *.swp
 *.DS_Store
+stack.md
 plan.md
 
 # Python
