@@ -1,0 +1,43 @@
+import os
+import logging
+from typing import Optional
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+import httpx
+import uvicorn
+
+logging.basicConfig(level=logging.INFO, format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "bff-merchant", "message": "%(message)s"}')
+logger = logging.getLogger("bff-merchant")
+
+app = FastAPI(title="BFF Merchant API", version="1.0.0")
+PORT = int(os.environ.get("PORT", "8020"))
+
+CATALOG_URL = os.environ.get("CATALOG_URL", "http://localhost:8002")
+ORDER_URL = os.environ.get("ORDER_URL", "http://localhost:8014")
+
+class UpdateOrderStatusRequest(BaseModel):
+    status: str
+    notes: Optional[str] = ""
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "SERVING", "service": "bff-merchant"}
+
+@app.get("/api/v1/merchant/restaurants/{restaurant_id}/menu")
+def get_restaurant_menu(restaurant_id: str):
+    with httpx.Client(timeout=3.0) as client:
+        res = client.get(f"{CATALOG_URL}/api/v1/restaurants/{restaurant_id}/menu")
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail="Failed to fetch menu")
+        return res.json()
+
+@app.post("/api/v1/merchant/orders/{order_id}/status")
+def update_order_status(order_id: str, req: UpdateOrderStatusRequest):
+    with httpx.Client(timeout=3.0) as client:
+        res = client.put(f"{ORDER_URL}/api/v1/orders/{order_id}/status", json=req.model_dump())
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
