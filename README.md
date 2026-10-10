@@ -77,3 +77,8 @@ The root `Dockerfile` accepts the `SERVICE` build argument:
 docker build --build-arg SERVICE=order -t totemops-order:latest .
 docker build --build-arg SERVICE=bff-customer -t totemops-bff-customer:latest .
 ```
+
+
+# Technical features in the project
+
+Використовуємо OIDC.

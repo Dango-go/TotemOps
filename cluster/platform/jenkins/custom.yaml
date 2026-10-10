@@ -1,0 +1,104 @@
+ 
+controller:
+  componentName: "jenkins-controller"
+  image: "jenkins/jenkins"
+  tag: "lts-jdk17"
+  imagePullPolicy: "Always"
+
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1024Mi"
+    limits:
+      cpu: "2000m"
+      memory: "2048Mi"
+
+  javaOpts: "-Djenkins.install.runSetupWizard=false -XX:+UseG1GC -XX:+ExplicitGCInvokesConcurrent -Duser.timezone=UTC"
+
+  # Ports: 8080 (UI/API), 50000 (JNLP Agent communication)
+  servicePort: 8080
+  agentListenerPort: 50000
+  serviceType: ClusterIP
+
+  # Persistent Volume Claim backed by AWS EBS gp3 StorageClass
+  persistence:
+    enabled: true
+    storageClass: "gp3"
+    size: "20Gi"
+    accessMode: "ReadWriteOnce"
+
+  # Core Plugins required for Cloud-Native Kubernetes pipelines
+  installPlugins:
+    - "kubernetes:4274.v2424072f9dcf"
+    - "workflow-aggregator:596.v8c21c963d92d"
+    - "git:5.2.1"
+    - "configuration-as-code:1775.v810dc950b_514"
+    - "credentials-binding:681.vf91662a_326e4"
+    - "pipeline-stage-view:2.34"
+    - "timestamper:1.26"
+    - "ansicolor:1.0.4"
+    - "sonar:2.16.1"
+
+  # Jenkins Configuration as Code (JCasC) - Zero manual UI configuration
+  JCasC:
+    enabled: true
+    defaultConfig: true
+    configScripts:
+      totemops-core-config: |
+        jenkins:
+          systemMessage: "TotemOps CI/CD Platform — Automated Jenkins on AWS EKS"
+          numExecutors: 0
+          mode: EXCLUSIVE
+          scmCheckoutRetryCount: 3
+          
+          # Kubernetes Cloud configuration for dynamic agent pod provisioning
+          clouds:
+            - kubernetes:
+                name: "kubernetes"
+                serverUrl: "https://kubernetes.default.svc"
+                jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+                jenkinsTunnel: "jenkins-agent.jenkins.svc.cluster.local:50000"
+                namespace: "jenkins"
+                containerCapStr: "15"
+                retentionTimeout: 10
+                connectTimeout: 100
+                templates:
+                  - name: "default-agent"
+                    label: "jenkins-agent"
+                    nodeUsageMode: "NORMAL"
+                    containers:
+                      - name: "jnlp"
+                        image: "jenkins/inbound-agent:3206.vb_15dcf73f6a_9-1"
+                        privileged: false
+                        alwaysPullImage: false
+                        workingDir: "/home/jenkins/agent"
+                        resourceRequestCpu: "200m"
+                        resourceRequestMemory: "256Mi"
+                        resourceLimitCpu: "1000m"
+                        resourceLimitMemory: "512Mi"
+
+        # Security hardening
+        security:
+          remotingCLI:
+            enabled: false
+          sspi:
+            forceLdaps: false
+
+        unclassified:
+          location:
+            url: "http://jenkins.jenkins.svc.cluster.local:8080/"
+
+# RBAC Configuration: Grant Jenkins Controller permissions to spawn & manage pods
+rbac:
+  create: true
+  readSecrets: true
+
+serviceAccount:
+  create: true
+  name: "jenkins"
+  annotations: {}
+
+# Disable static agent deployment (we use dynamic K8s Pod agents exclusively)
+agent:
+  enabled: false

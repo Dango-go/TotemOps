@@ -1,0 +1,55 @@
+serviceAccount:
+  create: true
+  name: "karpenter"
+  annotations:
+    # IRSA role created by Terraform for Karpenter controller permissions
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/totemops-karpenter-controller"
+
+# Global cluster configuration
+settings:
+  clusterName: "totem-prod-eks"
+  clusterEndpoint: "https://K8S_API_ENDPOINT"
+  interruptionQueue: "totemops-karpenter-interruption-queue"
+  featureGates:
+    spotToSpotConsolidation: true
+
+# Controller Replica & Scheduling
+replicas: 2 # High Availability (active/standby leader election)
+
+# Run Karpenter on system Managed Node Group so it doesn't try to autoscale itself
+nodeSelector:
+  node.kubernetes.io/scope: "system"
+
+tolerations:
+  - key: "CriticalAddonsOnly"
+    operator: "Exists"
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: "topology.kubernetes.io/zone"
+    whenUnsatisfiable: "ScheduleAnyway"
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: "karpenter"
+
+# Controller Resource Limits
+controller:
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1024Mi"
+  
+  # Log level (info for production, debug for troubleshooting)
+  logLevel: "info"
+  
+  # Metrics for Prometheus scraping
+  metrics:
+    port: 8000
+
+# Webhook configuration (built into Karpenter core in v1.x)
+webhook:
+  enabled: true
+  port: 8443
