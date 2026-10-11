@@ -1,4 +1,5 @@
 # TotemOps — Cloud-Native Microservices Platform
+# Classical DevOps sandbox project
 
 TotemOps is an enterprise-grade cloud-native food delivery platform (similar to Uber Eats / Glovo) built with **FastAPI (Python 3.12+)**, **PostgreSQL (SQLAlchemy 2.0)**, and Kubernetes-native health probes.
 
@@ -82,3 +83,11 @@ docker build --build-arg SERVICE=bff-customer -t totemops-bff-customer:latest .
 # Technical features in the project
 
 Використовуємо OIDC.
+
+# CI/CD
+
+Використовуємо Jenkins який знаходиться у кластері для CI. В CI використовуємо найкращі практики devsecops.
+CI складається з 6 стейджів:
+1. Detect Changes
+2. Lint & Unit Tests
+3. (Gitleaks)

@@ -39,6 +39,7 @@ controller:
     - "timestamper:1.26"
     - "ansicolor:1.0.4"
     - "sonar:2.16.1"
+    - "job-dsl:1.89"
 
   # Jenkins Configuration as Code (JCasC) - Zero manual UI configuration
   JCasC:
@@ -88,6 +89,25 @@ controller:
         unclassified:
           location:
             url: "http://jenkins.jenkins.svc.cluster.local:8080/"
+
+        # Automatically provision the main Monorepo pipeline job
+        jobs:
+          - script: >
+              pipelineJob('totemops-ci') {
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/bodya/totemops.git')
+                        }
+                        branches('*/main')
+                      }
+                    }
+                    scriptPath('pipelines/Jenkinsfile')
+                  }
+                }
+              }
 
 # RBAC Configuration: Grant Jenkins Controller permissions to spawn & manage pods
 rbac:
