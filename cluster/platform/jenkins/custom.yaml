@@ -43,7 +43,7 @@ controller:
   # Jenkins Configuration as Code (JCasC) - Zero manual UI configuration
   JCasC:
     enabled: true
-    defaultConfig: true
+    defaultConfig: true # added some default plugins
     configScripts:
       totemops-core-config: |
         jenkins:
