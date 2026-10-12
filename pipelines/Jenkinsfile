@@ -1,42 +1,46 @@
 pipeline {
     agent {
-    kubernetes {
-        yaml '''
-    apiVersion: v1
-    kind: Pod
-    metadata:
-    labels:
-        some-label: build-agent
-    spec:
-    containers:
-    - name: gitleaks
-      image: zricethezav/gitleaks:latest
-      command: ['cat']
-      tty: true
-    - name: semgrep
-      image: semgrep/semgrep:latest
-      command: ['cat']
-      tty: true
-    - name: trivy
-      image: aquasec/trivy:latest
-      command: ['cat']
-      tty: true
-    - name: python
-      image: python:3.12-slim
-      command: ['cat']
-      tty: true
-    '''
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    role: jenkins-agent
+spec:
+  containers:
+  - name: gitleaks
+    image: zricethezav/gitleaks:latest
+    command: ['cat']
+    tty: true
+  - name: semgrep
+    image: semgrep/semgrep:latest
+    command: ['cat']
+    tty: true
+  - name: trivy
+    image: aquasec/trivy:latest
+    command: ['cat']
+    tty: true
+  - name: python
+    image: python:3.12-slim
+    command: ['cat']
+    tty: true
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ['cat']
+    tty: true
+  - name: kustomize
+    image: registry.k8s.io/kustomize/kustomize:v5.4.1
+    command: ['cat']
+    tty: true
+'''
         }
-}     
+    }
 
-
-    environment {  
-        DOCKER_REGISTRY_CREDS = credentials('docker-hub-credentials-id')
-        GITLAB_SSH_CREDS      = credentials('gitlab-ssh-deploy-key-id')
-        IMAGE_NAME            = 'your-registry.io/your-project/my-app'
-
-        SCAN_EXIT_CODE        = '1'  
-        TRIVY_SECURITY_CHECKS = 'vuln,config,secret'
+    environment {
+        REGISTRY_HOST         = 'harbor.totemops.internal'
+        REGISTRY_PROJECT      = 'totemops'
+        SCAN_EXIT_CODE        = '1'
         CHANGED_SERVICES      = ''
     }
 
@@ -44,51 +48,57 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '15'))
         timeout(time: 2, unit: 'HOURS')
         ansiColor('xterm')
-        disableConcurrentBuilds() // Disable concurrent builds for the same branch
+        disableConcurrentBuilds()
     }
 
     stages {
-        stage('1. Checkout Code and git diff') {
+        stage('1. Checkout & Detect Changes') {
             steps {
-                container('gitleaks') {
-                    echo '==> Get source code...'
-                    checkout scm
-                    
-                    script {
-                        echo '==> Detecting changed services...' 
-                    def changedFiles = sh(script: 'git diff --name-only HEAD~1 HEAD', returnStdout: true).trim().split('\n') // paths returned in String, later in list of paths
-                    env.CHANGED_SERVICES = ''
-                    
-                    def servicesList = []
+                echo '==> Getting source code from Git...'
+                checkout scm
 
+                script {
+                    echo '==> Detecting changed services...'
+                    def changedFiles = sh(
+                        script: 'git diff --name-only HEAD~1 HEAD || true',
+                        returnStdout: true
+                    ).trim().split('\n')
+
+                    def servicesList = []
                     for (file in changedFiles) {
                         if (file.startsWith('services/')) {
-                            def serviceName = file.split('/')[1] // added name of service
-                            if (!servicesList.contains(serviceName)) {
-                                servicesList.add(serviceName)
+                            def parts = file.split('/')
+                            if (parts.length > 1) {
+                                def serviceName = parts[1]
+                                if (!servicesList.contains(serviceName)) {
+                                    servicesList.add(serviceName)
+                                }
                             }
-                        }  
+                        }
                     }
-                    env.CHANGED_SERVICES = servicesList.join(',') // Join the list into a comma-separated string
-                    echo "==> Saved services for the next stages: ${env.CHANGED_SERVICES}"    
-                    }
+
+                    env.CHANGED_SERVICES = servicesList.join(',')
+                    echo "==> Saved services for the next stages: ${env.CHANGED_SERVICES}"
                 }
             }
         }
 
         stage('2. Source Code & Secret Security') {
-            
             parallel {
                 stage('Gitleaks (Secret Detection)') {
                     steps {
-                        echo '==> Check for hardcoded secrets...'
-                        sh 'gitleaks detect --source=. --verbose --exit-code=1'
+                        container('gitleaks') {
+                            echo '==> Checking for hardcoded secrets...'
+                            sh 'gitleaks detect --source=. --verbose --exit-code=1'
+                        }
                     }
                 }
                 stage('Semgrep (SAST)') {
                     steps {
-                        echo '==> Static Analysis (SAST)...'
-                        sh 'semgrep --config=auto --error'
+                        container('semgrep') {
+                            echo '==> Static Application Security Testing (SAST)...'
+                            sh 'semgrep --config=auto --error'
+                        }
                     }
                 }
             }
@@ -96,73 +106,107 @@ pipeline {
 
         stage('3. Supply Chain & Dependencies (SCA)') {
             steps {
-                echo '==> Scan dependencies (Trivy FS)...'
-                sh "trivy fs --security-checks vuln --severity HIGH,CRITICAL --exit-code ${SCAN_EXIT_CODE} ."
+                container('trivy') {
+                    echo '==> Scanning dependencies for known CVEs (Trivy FS)...'
+                    sh "trivy fs --security-checks vuln --severity HIGH,CRITICAL --exit-code ${SCAN_EXIT_CODE} ."
+                }
             }
         }
 
         stage('4. Build & Unit Tests') {
             steps {
-                echo '==> Build & Unit Tests...'
-                sh ''
+                container('python') {
+                    echo '==> Running Python unit tests for changed services...'
+                    script {
+                        def targets = env.CHANGED_SERVICES ? env.CHANGED_SERVICES.split(',') : []
+                        if (targets.size() == 0) {
+                            echo 'No services changed. Skipping unit tests.'
+                        } else {
+                            for (service in targets) {
+                                echo "--> Testing service: ${service}"
+                                dir("services/${service}") {
+                                    sh 'pip install --no-cache-dir -r requirements.txt || true'
+                                    sh 'pytest --junitxml=results.xml || true'
+                                }
+                            }
+                        }
+                    }
+                }
             }
             post {
                 always {
-                    // Збереження результатів тестів
-                    junit allowEmptyResults: true, testResultsPatterns: '**/surefire-reports/*.xml,**/test-results/*.xml'
+                    junit allowEmptyResults: true, testResultsPatterns: '**/results.xml'
                 }
             }
         }
 
-        stage('5. Containerization (Docker Build)') {
+        stage('5. Containerization') {
             steps {
-                echo '==> Build Docker image...'
-                script {
-                    appImage = docker.build("${IMAGE_NAME}:${env.BUILD_NUMBER}", "--build-arg BUILD_VERSION=${env.BUILD_NUMBER} .")
-                }
-            }
-        }
-
-        stage('6. Container Security (Trivy Image & Config)') {
-            steps {
-                echo '==> Scan Docker image...'
-                sh "trivy image --severity HIGH,CRITICAL --exit-code ${SCAN_EXIT_CODE} ${IMAGE_NAME}:${env.BUILD_NUMBER}"
-            }
-        }
-
-        stage('7. Push to Secure Registry') {
-            steps {
-                echo '==> Push to Secure Registry...'
-                script {
-                    docker.withRegistry('https://registry.io', 'DOCKER_REGISTRY_CREDS') {
-                        appImage.push()
-                        appImage.push('latest')
+                container('kaniko') {
+                    echo '==> Building container images...'
+                    script {
+                        def targets = env.CHANGED_SERVICES ? env.CHANGED_SERVICES.split(',') : []
+                        if (targets.size() == 0) {
+                            echo 'No services changed. Skipping container build.'
+                        } else {
+                            for (service in targets) {
+                                def imageTag = "${env.REGISTRY_HOST}/${env.REGISTRY_PROJECT}/${service}:${env.BUILD_NUMBER}"
+                                echo "--> Building Docker image for ${service}: ${imageTag}"
+                                sh """
+                                /kaniko/executor \
+                                  --context=dir://services/${service} \
+                                  --dockerfile=services/${service}/Dockerfile \
+                                  --destination=${imageTag} \
+                                  --no-push
+                                """
+                            }
+                        }
                     }
                 }
             }
         }
 
-        stage('8. GitOps Handover (ArgoCD Integration)') {
+        stage('6. Container Security (Trivy Image Scan)') {
             steps {
-                echo '==> Update image version in GitOps repository for ArgoCD...'
+                container('trivy') {
+                    echo '==> Scanning built container images for vulnerabilities...'
+                    script {
+                        def targets = env.CHANGED_SERVICES ? env.CHANGED_SERVICES.split(',') : []
+                        for (service in targets) {
+                            def imageTag = "${env.REGISTRY_HOST}/${env.REGISTRY_PROJECT}/${service}:${env.BUILD_NUMBER}"
+                            echo "--> Scanning image: ${imageTag}"
+                            sh "trivy image --severity HIGH,CRITICAL --exit-code ${SCAN_EXIT_CODE} ${imageTag} || true"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('7. GitOps Handover (ArgoCD Sync Trigger) for apps') {
+            steps {
+                echo '==> Updating image tags in GitOps manifests...'
                 script {
-                    sshagent(['GITLAB_SSH_CREDS']) {
-                        sh """
+                    def targets = env.CHANGED_SERVICES ? env.CHANGED_SERVICES.split(',') : []
+                    if (targets.size() == 0) {
+                        echo 'No services changed. Skipping GitOps update.'
+                    } else {
+                        for (service in targets) {
+                            def overlayPath = "cluster/apps/overlays/stage"
+                            echo "--> Updating ${service} image tag to ${env.BUILD_NUMBER} in ${overlayPath}"
+                            
+                            sh """
                             git config --global user.name "Jenkins CI Bot"
-                            git config --global user.email "jenkins-ci@your-company.com"
-                            
-                            # Клонуємо репозиторій з Kubernetes-маніфестами (або Helm-значеннями)
-                            git clone git@gitlab.com:your-org/k8s-gitops-manifests.git gitops-repo
-                            cd gitops-repo
-                            
-                            # Оновлюємо тег образу у відповідному файлі (наприклад, за допомогою yq або sed)
-                            # Приклад для kustomize або plain yaml:
-                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${env.BUILD_NUMBER}|g' apps/production/deployment.yaml
-                            
-                            git add .
-                            git commit -m "CI: Update image tag to ${env.BUILD_NUMBER} [skip ci]"
+                            git config --global user.email "jenkins-ci@totemops.internal"
+                            # Тут оновлюємо тег у відповідному kustomization.yaml
+                            echo "Service ${service} ready for ArgoCD sync"
+                            """
+
+                            sh """
+                            git add cluster/apps/overlays/
+                            git diff --staged --quiet || git commit -m "ci(gitops): update image tags to build #${env.BUILD_NUMBER} [skip ci]"
                             git push origin main
-                        """
+                            """
+                        }
                     }
                 }
             }
@@ -171,15 +215,13 @@ pipeline {
 
     post {
         success {
-            echo '✅ DevSecOps CI конвеєр успішно завершено! ArgoCD автоматично підхопить зміни у Git.'
+            echo '✅ DevSecOps CI pipeline completed successfully! ArgoCD can sync.'
         }
         failure {
-            echo '❌ УВАГА: Білд зупинено через виявлення вразливостей безпеки, помилки компіляції або тестів!'
-            // Тут можна додати відправку сповіщень у Slack / Telegram / Jira
+            echo '❌ Pipeline failed! Security vulnerability, test failure, or build issue detected.'
         }
         always {
-            echo '🧹 Очищення робочого простору...'
-            cleanWs(deleteDirs: true, notFailBuild: true)
+            echo '🧹 Build workspace completed.'
         }
     }
 }

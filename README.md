@@ -89,5 +89,9 @@ docker build --build-arg SERVICE=bff-customer -t totemops-bff-customer:latest .
 Використовуємо Jenkins який знаходиться у кластері для CI. В CI використовуємо найкращі практики devsecops.
 CI складається з 6 стейджів:
 1. Detect Changes
-2. Lint & Unit Tests
-3. (Gitleaks)
+2. Gitleaks (Secret Detection) + SAST
+3. Scan dependencies
+4. Lint & Unit Tests
+5. Containerization
+6. Image Scan
+7. Update

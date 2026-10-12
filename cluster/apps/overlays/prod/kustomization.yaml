@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: totem-prod
+
+resources:
+  - ../../base/identity
+  - ../../base/catalog
+  - ../../base/pricing
+  - ../../base/cart
+  - ../../base/inventory
+  - ../../base/payment
+  - ../../base/eta
+  - ../../base/geo-tracking
+  - ../../base/dispatch
+  - ../../base/fraud
+  - ../../base/notification
+  - ../../base/review
+  - ../../base/analytics-sink
+  - ../../base/order
+  - ../../base/bff-merchant
+  - ../../base/bff-courier
+  - ../../base/bff-customer
+
+commonLabels:
+  environment: prod
+  app.kubernetes.io/managed-by: argocd
+
+images:
+  - name: harbor.totemops.internal/totemops/identity
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/catalog
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/pricing
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/cart
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/inventory
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/payment
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/eta
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/geo-tracking
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/dispatch
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/fraud
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/notification
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/review
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/analytics-sink
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/order
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/bff-merchant
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/bff-courier
+    newTag: "v1.0.0"
+  - name: harbor.totemops.internal/totemops/bff-customer
+    newTag: "v1.0.0"

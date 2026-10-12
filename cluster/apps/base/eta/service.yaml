@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eta
+  labels:
+    app.kubernetes.io/name: eta
+    app.kubernetes.io/part-of: totemops
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8007
+    targetPort: http
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: eta

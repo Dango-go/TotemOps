@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bff-customer
+  labels:
+    app.kubernetes.io/name: bff-customer
+    app.kubernetes.io/part-of: totemops
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8022
+    targetPort: http
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: bff-customer
