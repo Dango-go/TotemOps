@@ -5,6 +5,7 @@
 *.DS_Store
 stack.md
 plan.md
+README.md
 
 # Python
 .venv/

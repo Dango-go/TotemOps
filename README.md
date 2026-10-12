@@ -86,6 +86,9 @@ docker build --build-arg SERVICE=bff-customer -t totemops-bff-customer:latest .
 
 # CI/CD
 
+Атлантіс для IaC (Terraform / Terragrunt).
+
+# CI 
 Використовуємо Jenkins який знаходиться у кластері для CI. В CI використовуємо найкращі практики devsecops.
 CI складається з 6 стейджів:
 1. Detect Changes
@@ -94,4 +97,7 @@ CI складається з 6 стейджів:
 4. Lint & Unit Tests
 5. Containerization
 6. Image Scan
-7. Update
+7. kubeconform & kube-linter
+8. Update
+
+# CD
