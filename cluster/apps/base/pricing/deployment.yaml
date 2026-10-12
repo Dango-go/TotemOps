@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: pricing
-        image: harbor.totemops.internal/totemops/pricing:latest
+        image: pricing:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

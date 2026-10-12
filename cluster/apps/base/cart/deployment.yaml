@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: cart
-        image: harbor.totemops.internal/totemops/cart:latest
+        image: cart:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

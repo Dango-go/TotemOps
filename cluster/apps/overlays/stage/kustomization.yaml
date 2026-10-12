@@ -4,60 +4,61 @@ kind: Kustomization
 namespace: totem-stage
 
 resources:
-  - ../../base/identity
-  - ../../base/catalog
-  - ../../base/pricing
-  - ../../base/cart
-  - ../../base/inventory
-  - ../../base/payment
-  - ../../base/eta
-  - ../../base/geo-tracking
-  - ../../base/dispatch
-  - ../../base/fraud
-  - ../../base/notification
-  - ../../base/review
-  - ../../base/analytics-sink
-  - ../../base/order
-  - ../../base/bff-merchant
-  - ../../base/bff-courier
-  - ../../base/bff-customer
+- ../../base/identity
+- ../../base/catalog
+- ../../base/pricing
+- ../../base/cart
+- ../../base/inventory
+- ../../base/payment
+- ../../base/eta
+- ../../base/geo-tracking
+- ../../base/dispatch
+- ../../base/fraud
+- ../../base/notification
+- ../../base/review
+- ../../base/analytics-sink
+- ../../base/order
+- ../../base/bff-merchant
+- ../../base/bff-courier
+- ../../base/bff-customer
 
 commonLabels:
-  environment: stage
   app.kubernetes.io/managed-by: argocd
+  environment: stage
 
 images:
-  - name: harbor.totemops.internal/totemops/identity
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/catalog
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/pricing
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/cart
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/inventory
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/payment
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/eta
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/geo-tracking
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/dispatch
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/fraud
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/notification
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/review
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/analytics-sink
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/order
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/bff-merchant
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/bff-courier
-    newTag: "latest"
-  - name: harbor.totemops.internal/totemops/bff-customer
-    newTag: "latest"
+- name: analytics-sink
+  newTag: latest
+- name: bff-courier
+  newTag: latest
+- name: bff-customer
+  newTag: latest
+- name: bff-merchant
+  newTag: latest
+- name: cart
+  newTag: latest
+- name: catalog
+  newTag: latest
+- name: dispatch
+  newTag: latest
+- name: eta
+  newTag: latest
+- name: fraud
+  newTag: latest
+- name: geo-tracking
+  newTag: latest
+- name: identity
+  newTag: latest
+- name: inventory
+  newTag: latest
+- name: notification
+  newTag: latest
+- name: order
+  newName: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/order
+  newTag: "42"
+- name: payment
+  newTag: latest
+- name: pricing
+  newTag: latest
+- name: review
+  newTag: latest

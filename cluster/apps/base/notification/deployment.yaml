@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: notification
-        image: harbor.totemops.internal/totemops/notification:latest
+        image: notification:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

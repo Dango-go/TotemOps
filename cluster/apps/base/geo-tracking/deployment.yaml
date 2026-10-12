@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: geo-tracking
-        image: harbor.totemops.internal/totemops/geo-tracking:latest
+        image: geo-tracking:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

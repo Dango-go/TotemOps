@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: payment
-        image: harbor.totemops.internal/totemops/payment:latest
+        image: payment:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

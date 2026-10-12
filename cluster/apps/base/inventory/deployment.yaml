@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: inventory
-        image: harbor.totemops.internal/totemops/inventory:latest
+        image: inventory:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: analytics-sink
-        image: harbor.totemops.internal/totemops/analytics-sink:latest
+        image: analytics-sink:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

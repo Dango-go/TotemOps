@@ -27,37 +27,37 @@ commonLabels:
   app.kubernetes.io/managed-by: argocd
 
 images:
-  - name: harbor.totemops.internal/totemops/identity
+  - name: identity
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/catalog
+  - name: catalog
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/pricing
+  - name: pricing
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/cart
+  - name: cart
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/inventory
+  - name: inventory
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/payment
+  - name: payment
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/eta
+  - name: eta
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/geo-tracking
+  - name: geo-tracking
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/dispatch
+  - name: dispatch
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/fraud
+  - name: fraud
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/notification
+  - name: notification
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/review
+  - name: review
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/analytics-sink
+  - name: analytics-sink
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/order
+  - name: order
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/bff-merchant
+  - name: bff-merchant
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/bff-courier
+  - name: bff-courier
     newTag: "v1.0.0"
-  - name: harbor.totemops.internal/totemops/bff-customer
+  - name: bff-customer
     newTag: "v1.0.0"

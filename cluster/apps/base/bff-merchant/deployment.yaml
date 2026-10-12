@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: bff-merchant
-        image: harbor.totemops.internal/totemops/bff-merchant:latest
+        image: bff-merchant:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

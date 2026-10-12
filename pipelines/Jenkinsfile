@@ -38,8 +38,8 @@ spec:
     }
 
     environment {
-        REGISTRY_HOST         = 'harbor.totemops.internal'
-        REGISTRY_PROJECT      = 'totemops'
+        REGISTRY_HOST         = '123456789012.dkr.ecr.eu-central-1.amazonaws.com'
+        REGISTRY_PROJECT      = ''
         SCAN_EXIT_CODE        = '1'
         CHANGED_SERVICES      = ''
     }
@@ -140,7 +140,7 @@ spec:
             }
         }
 
-        stage('5. Containerization') {
+        stage('5. Containerization (Kaniko) in ECR') {
             steps {
                 container('kaniko') {
                     echo '==> Building container images...'
@@ -150,7 +150,7 @@ spec:
                             echo 'No services changed. Skipping container build.'
                         } else {
                             for (service in targets) {
-                                def imageTag = "${env.REGISTRY_HOST}/${env.REGISTRY_PROJECT}/${service}:${env.BUILD_NUMBER}"
+                                def imageTag = "${env.REGISTRY_HOST}/${service}:${env.BUILD_NUMBER}"
                                 echo "--> Building Docker image for ${service}: ${imageTag}"
                                 sh """
                                 /kaniko/executor \
@@ -173,7 +173,7 @@ spec:
                     script {
                         def targets = env.CHANGED_SERVICES ? env.CHANGED_SERVICES.split(',') : []
                         for (service in targets) {
-                            def imageTag = "${env.REGISTRY_HOST}/${env.REGISTRY_PROJECT}/${service}:${env.BUILD_NUMBER}"
+                            def imageTag = "${env.REGISTRY_HOST}/${service}:${env.BUILD_NUMBER}"
                             echo "--> Scanning image: ${imageTag}"
                             sh "trivy image --severity HIGH,CRITICAL --exit-code ${SCAN_EXIT_CODE} ${imageTag} || true"
                         }
@@ -190,23 +190,24 @@ spec:
                     if (targets.size() == 0) {
                         echo 'No services changed. Skipping GitOps update.'
                     } else {
-                        for (service in targets) {
-                            def overlayPath = "cluster/apps/overlays/stage"
-                            echo "--> Updating ${service} image tag to ${env.BUILD_NUMBER} in ${overlayPath}"
-                            
-                            sh """
+                        container('kustomize') {
+                            dir('cluster/apps/overlays/stage') {
+                                for (service in targets) {
+                                    def fullImage = "${env.REGISTRY_HOST}/${service}:${env.BUILD_NUMBER}"
+                                    echo "--> Kustomize edit set image for ${service}: ${fullImage}"
+                                    sh "kustomize edit set image ${service}=${fullImage}"
+                                }
+                            }
+                        }
+
+                        sh """
                             git config --global user.name "Jenkins CI Bot"
                             git config --global user.email "jenkins-ci@totemops.internal"
-                            # Тут оновлюємо тег у відповідному kustomization.yaml
-                            echo "Service ${service} ready for ArgoCD sync"
-                            """
-
-                            sh """
-                            git add cluster/apps/overlays/
+                            git add cluster/apps/overlays/stage/kustomization.yaml
                             git diff --staged --quiet || git commit -m "ci(gitops): update image tags to build #${env.BUILD_NUMBER} [skip ci]"
-                            git push origin main
-                            """
-                        }
+                            # git push origin main
+                        """
+                        echo "✅ GitOps manifest updated and ready for ArgoCD sync!"
                     }
                 }
             }

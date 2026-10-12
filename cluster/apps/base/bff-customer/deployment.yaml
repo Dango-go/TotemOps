@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: bff-customer
-        image: harbor.totemops.internal/totemops/bff-customer:latest
+        image: bff-customer:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

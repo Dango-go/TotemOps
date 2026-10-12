@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: dispatch
-        image: harbor.totemops.internal/totemops/dispatch:latest
+        image: dispatch:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

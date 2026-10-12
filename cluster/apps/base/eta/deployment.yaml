@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: eta
-        image: harbor.totemops.internal/totemops/eta:latest
+        image: eta:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
