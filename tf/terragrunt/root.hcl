@@ -1,5 +1,3 @@
-# tf/terragrunt/root.hcl
-
 remote_state {
   backend = "s3"
   generate = {
@@ -12,7 +10,7 @@ remote_state {
     region       = "eu-central-1"
     encrypt      = true
     use_lockfile = true
-    profile      = "totemops" # <--- НАЗВА ТВОГО ПРОФІЛЮ З AWS CLI
+    profile      = "main" 
   }
 }
 

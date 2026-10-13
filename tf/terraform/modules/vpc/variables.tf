@@ -32,7 +32,6 @@ variable "cluster_name" {
 variable "single_nat_gateway" {
   type        = bool
   description = "If true, provision a single NAT Gateway shared across all private subnets to save cost (ideal for dev/stage). If false, provision one per AZ for high availability (prod)."
-  default     = true
 }
 
 variable "tags" {
