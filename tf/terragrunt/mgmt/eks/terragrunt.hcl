@@ -8,7 +8,7 @@ include "envcommon" {
 }
 
 dependency "vpc" {
-  config_path = "../vpc"
+  config_path = "../vpc" # path to mgmt vpc 
 
    
   mock_outputs = {
@@ -25,9 +25,9 @@ inputs = {
   subnet_ids = dependency.vpc.outputs.private_subnets
 
  
-  node_instance_types = ["t3.large"]
+  node_instance_types = ["t3.medium"]
   capacity_type       = "ON_DEMAND"
-  min_size            = 1
+  min_size            = 2
   desired_size        = 2
   max_size            = 4
 
