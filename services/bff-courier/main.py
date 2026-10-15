@@ -41,13 +41,35 @@ def accept_assignment(req: AcceptAssignmentRequest):
             raise HTTPException(status_code=res.status_code, detail=res.text)
         return res.json()
 
-@app.post("/api/v1/courier/orders/delivered")
-def mark_delivered(req: MarkDeliveredRequest):
+@app.post("/api/v1/courier/orders/{order_id}/pickup")
+def mark_picked_up(order_id: str):
     with httpx.Client(timeout=3.0) as client:
-        res = client.put(f"{ORDER_URL}/api/v1/orders/{req.order_id}/status", json={"status": "DELIVERED"})
+        res = client.put(f"{ORDER_URL}/api/v1/orders/{order_id}/status", json={"status": "PICKED_UP"})
         if res.status_code != 200:
             raise HTTPException(status_code=res.status_code, detail=res.text)
         return res.json()
+
+@app.post("/api/v1/courier/orders/{order_id}/deliver")
+def mark_delivered_by_id(order_id: str):
+    with httpx.Client(timeout=3.0) as client:
+        # 1. Update order status to DELIVERED
+        res = client.put(f"{ORDER_URL}/api/v1/orders/{order_id}/status", json={"status": "DELIVERED"})
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        order_data = res.json()
+        
+        # 2. Release courier in geo-tracking if assigned
+        courier_id = order_data.get("courier_id")
+        if courier_id:
+            try:
+                client.put(f"{GEO_URL}/api/v1/geo/couriers/{courier_id}/status", json={"is_available": True})
+            except Exception as e:
+                logger.warning(f"Failed to release courier {courier_id}: {e}")
+        return order_data
+
+@app.post("/api/v1/courier/orders/delivered")
+def mark_delivered(req: MarkDeliveredRequest):
+    return mark_delivered_by_id(req.order_id)
 
 @app.websocket("/ws/location")
 async def websocket_location(websocket: WebSocket):

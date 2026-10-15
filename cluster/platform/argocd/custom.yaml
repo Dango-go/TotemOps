@@ -1,0 +1,274 @@
+global:
+  domain: "argocd.mgmt.totemops.internal"
+  image:
+    repository: "quay.io/argoproj/argocd"
+    tag: "v2.12.4"
+    imagePullPolicy: "IfNotPresent"
+  
+  # Non-root secure runtime context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+
+  podLabels:
+    app.kubernetes.io/part-of: "totemops-platform"
+    app.kubernetes.io/managed-by: "Helm"
+    tier: "management"
+
+# 1. ARGO CD SERVER (UI, REST & gRPC API)
+server:
+  name: "server"
+  replicas: 2
+  
+  # Terminate TLS at AWS Application Load Balancer
+  insecure: true
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1024Mi"
+
+  service:
+    type: "ClusterIP"
+    servicePortHttp: 80
+    servicePortHttps: 443
+
+  # Ingress via AWS Load Balancer Controller (ALB)
+  ingress:
+    enabled: true
+    ingressClassName: "alb"
+    annotations:
+      alb.ingress.kubernetes.io/scheme: "internal"
+      alb.ingress.kubernetes.io/target-type: "ip"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/backend-protocol: "HTTP"
+      alb.ingress.kubernetes.io/healthcheck-path: "/healthz"
+      alb.ingress.kubernetes.io/tags: "Environment=mgmt,Project=TotemOps,Owner=DevOps"
+    hosts:
+      - "argocd.mgmt.totemops.internal"
+
+  # Core Argo CD Server Config (argocd-cm)
+  config:
+    url: "https://argocd.mgmt.totemops.internal"
+    application.instanceLabelKey: "argocd.argoproj.io/instance"
+    
+    # Git commit status tracking
+    statusbadge.enabled: "true"
+    
+    # Safe Git connection settings
+    admin.enabled: "true"
+    users.anonymous.enabled: "false"
+
+    # Custom Health Checks for Cloud-Native CRDs
+    resource.customizations: |
+      cert-manager.io/Certificate:
+        health.lua: |
+          hs = {}
+          if obj.status ~= nil then
+            if obj.status.conditions ~= nil then
+              for i, condition in ipairs(obj.status.conditions) do
+                if condition.type == "Ready" and condition.status == "True" then
+                  hs.status = "Healthy"
+                  hs.message = condition.message
+                  return hs
+                end
+                if condition.type == "Ready" and condition.status == "False" then
+                  hs.status = "Degraded"
+                  hs.message = condition.message
+                  return hs
+                end
+              end
+            end
+          end
+          hs.status = "Progressing"
+          hs.message = "Waiting for Certificate to become Ready"
+          return hs
+
+      postgresql.cnpg.io/Cluster:
+        health.lua: |
+          hs = {}
+          if obj.status ~= nil then
+            if obj.status.phase == "Cluster in healthy state" then
+              hs.status = "Healthy"
+              hs.message = obj.status.phase
+              return hs
+            end
+          end
+          hs.status = "Progressing"
+          hs.message = "Database cluster initializing"
+          return hs
+
+  # RBAC Definition (argocd-rbac-cm)
+  rbacConfig:
+    policy.default: "role:readonly"
+    policy.csv: |
+      # Built-in DevOps Admin Role
+      g, devops-admin, role:admin
+      g, system:masters, role:admin
+      
+      # Developer Team: Read-only to apps & platform, sync allowed only on dev/stage
+      p, role:developer, applications, get, */*, allow
+      p, role:developer, applications, sync, stage/*, allow
+      p, role:developer, logs, get, */*, allow
+      g, dev-team, role:developer
+    scopes: "[groups, email]"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      additionalLabels:
+        release: "kube-prometheus-stack"
+
+# 2. REPO SERVER (Git Clone, Helm Template, Kustomize Build)
+repoServer:
+  name: "repo-server"
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: "300m"
+      memory: "512Mi"
+    limits:
+      cpu: "1500m"
+      memory: "2048Mi"
+
+  env:
+    # Generous timeouts for large monorepo templates & remote Helm charts
+    - name: ARGOCD_EXEC_TIMEOUT
+      value: "180s"
+    - name: HELM_CACHE_HOME
+      value: "/tmp/helm/cache"
+    - name: HELM_CONFIG_HOME
+      value: "/tmp/helm/config"
+    - name: HELM_DATA_HOME
+      value: "/tmp/helm/data"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      additionalLabels:
+        release: "kube-prometheus-stack"
+
+# 3. APPLICATION CONTROLLER (Reconciliation Loop & State Enforcer)
+controller:
+  name: "application-controller"
+  # Sharding can be enabled when managing >500 applications across multiple remote EKS clusters
+  replicas: 1
+
+  args:
+    statusProcessors: 30
+    operationProcessors: 15
+    appResyncPeriod: 180
+    selfHealTimeoutSeconds: 5
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1024Mi"
+    limits:
+      cpu: "2000m"
+      memory: "2048Mi"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      additionalLabels:
+        release: "kube-prometheus-stack"
+
+# 4. APPLICATIONSET CONTROLLER (Fleet Automation & Multi-Cluster Generators)
+applicationSet:
+  enabled: true
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      additionalLabels:
+        release: "kube-prometheus-stack"
+
+# 5. NOTIFICATIONS CONTROLLER (Slack / Alertmanager / PagerDuty Dispatcher)
+notifications:
+  enabled: true
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+  # Templates for automatic alerts on deployment states
+  notifiers:
+    service.webhook: |
+      url: http://notification.stage.svc.cluster.local:8011/api/v1/notifications/send
+      headers:
+        - name: Content-Type
+          value: application/json
+
+  triggers:
+    trigger.on-sync-failed: |
+      - when: app.status.operationState.phase in ['Failed', 'Error']
+        send: [app-sync-failed]
+    trigger.on-deployed: |
+      - when: app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+        send: [app-deployed]
+
+  templates:
+    template.app-deployed: |
+      message: |
+        🚀 Application {{.app.metadata.name}} successfully deployed to {{.app.spec.destination.server}} (revision {{.app.status.sync.revision}}).
+    template.app-sync-failed: |
+      message: |
+        🚨 Sync FAILED for {{.app.metadata.name}}: {{.app.status.operationState.message}}
+
+# 6. REDIS (State & Git Caching Layer)
+redis:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      additionalLabels:
+        release: "kube-prometheus-stack"
+
+# HA Redis Sentinel can be activated if replica count > 1 is needed
+redis-ha:
+  enabled: false
+
+# External Dex SSO (Disabled by default, using direct OIDC or built-in RBAC)
+dex:
+  enabled: false

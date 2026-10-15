@@ -67,13 +67,22 @@ def main():
             (8021, "bff-courier"), (8022, "bff-customer")
         ]
         for port, name in ports:
-            # Test liveness
-            r_live = client.get(f"http://localhost:{port}/healthz")
-            assert r_live.status_code == 200, f"{name} liveness failed on port {port}"
-            # Test readiness (including DB check)
-            r_ready = client.get(f"http://localhost:{port}/readyz")
-            assert r_ready.status_code == 200, f"{name} readiness failed on port {port}: {r_ready.text}"
-            print(f"  ✓ {name:15} (: {port}) Liveness: OK | Readiness: {r_ready.json()}")
+            # Poll until live and ready (up to 15 attempts, 1s interval)
+            ready = False
+            r_ready_json = {}
+            for attempt in range(15):
+                try:
+                    r_live = client.get(f"http://localhost:{port}/healthz")
+                    r_ready = client.get(f"http://localhost:{port}/readyz")
+                    if r_live.status_code == 200 and r_ready.status_code == 200:
+                        ready = True
+                        r_ready_json = r_ready.json()
+                        break
+                except Exception:
+                    time.sleep(1)
+            assert ready, f"{name} failed to become ready on port {port} after 15 seconds"
+            print(f"  ✓ {name:15} (: {port}) Liveness: OK | Readiness: {r_ready_json}")
+
 
         # 2. Test Auth via bff-customer
         print("\n--- 2. Customer Auth & Catalog via bff-customer ---")
@@ -139,30 +148,110 @@ def main():
         print(f"    - Total: {order_data['total_cents']} cents")
         print(f"    - Assigned Courier: {order_data['courier_id']}")
 
-        # 6. Merchant Update Status
-        print("\n--- 5. Merchant Status Update via bff-merchant ---")
-        merchant_res = client.post(
-            f"http://localhost:8020/api/v1/merchant/orders/{order_id}/status",
-            json={"status": "READY_FOR_PICKUP", "notes": "Order packed"}
-        )
-        assert merchant_res.status_code == 200
-        print(f"  ✓ Merchant updated order to: {merchant_res.json()['status']}")
+        print(f"    - Assigned Courier: {order_data['courier_id']}")
 
-        # 7. Courier Complete Order
-        print("\n--- 6. Courier Delivery via bff-courier ---")
-        courier_res = client.post(
-            "http://localhost:8021/api/v1/courier/orders/delivered",
-            json={"order_id": order_id}
-        )
-        assert courier_res.status_code == 200
-        print(f"  ✓ Courier completed order: status={courier_res.json()['status']}")
+        # 6. Full Order Lifecycle (State Machine)
+        print("\n--- 5. Full Kitchen & Courier State Machine Transitions ---")
+        # 5.1 Kitchen Accepts Order
+        acc_res = client.post(f"http://localhost:8020/api/v1/merchant/orders/{order_id}/accept")
+        assert acc_res.status_code == 200
+        assert acc_res.json()["status"] == "ACCEPTED"
+        print("  ✓ [ACCEPTED] Merchant accepted the order")
 
-        # 8. Customer Track Order Details
-        print("\n--- 7. Customer Track Order Details ---")
+        # 5.2 Chef Starts Cooking
+        cook_res = client.post(f"http://localhost:8020/api/v1/merchant/orders/{order_id}/cooking")
+        assert cook_res.status_code == 200
+        assert cook_res.json()["status"] == "COOKING"
+        print("  ✓ [COOKING] Chef started preparing the meal")
+
+        # 5.3 Order Packed and Ready
+        ready_res = client.post(f"http://localhost:8020/api/v1/merchant/orders/{order_id}/ready")
+        assert ready_res.status_code == 200
+        assert ready_res.json()["status"] == "READY_FOR_PICKUP"
+        print("  ✓ [READY_FOR_PICKUP] Order packed and waiting for courier")
+
+        # 5.4 Courier Picks Up Order
+        pickup_res = client.post(f"http://localhost:8021/api/v1/courier/orders/{order_id}/pickup")
+        assert pickup_res.status_code == 200
+        assert pickup_res.json()["status"] == "PICKED_UP"
+        print("  ✓ [PICKED_UP] Courier took the package and is in transit")
+
+        # 5.5 Courier Delivers Order
+        deliver_res = client.post(f"http://localhost:8021/api/v1/courier/orders/{order_id}/deliver")
+        assert deliver_res.status_code == 200
+        assert deliver_res.json()["status"] == "DELIVERED"
+        print("  ✓ [DELIVERED] Courier handed meal to customer & courier released")
+
+        # 7. Customer Track Order Details
+        print("\n--- 6. Customer Track Order Details ---")
         track_res = client.get(f"http://localhost:8022/api/v1/orders/{order_id}")
         assert track_res.status_code == 200
         details = track_res.json()
         print(f"  ✓ Verified tracked order: status={details['status']}, courier_loc={details.get('courier_location')}")
+
+        # 8. Order Cancellation & Refund Business Logic
+        print("\n--- 7. Order Cancellation & Refund Policies ---")
+        # 7.1 Case A: Cancellation before cooking -> 100% refund
+        client.post(
+            "http://localhost:8022/api/v1/cart/items",
+            headers={"x-user-id": user_info["user_id"]},
+            json={
+                "restaurant_id": restaurant_id,
+                "item_id": first_item["id"],
+                "name": first_item["name"],
+                "price_cents": first_item["price_cents"],
+                "quantity": 1
+            }
+        )
+        ord2_res = client.post(
+            "http://localhost:8022/api/v1/checkout",
+            headers={"x-user-id": user_info["user_id"]},
+            json={"delivery_address": "Maidan Nezalezhnosti, Kyiv"}
+        )
+        ord2_id = ord2_res.json()["order_id"]
+        ord2_total = ord2_res.json()["total_cents"]
+        
+        cancel2_res = client.post(f"http://localhost:8022/api/v1/orders/{ord2_id}/cancel", json={"reason": "Changed my mind"})
+        assert cancel2_res.status_code == 200
+        cancel2_data = cancel2_res.json()
+        assert cancel2_data["refund_percentage"] == 100
+        assert cancel2_data["refund_amount_cents"] == ord2_total
+        print(f"  ✓ Case A passed: Order {ord2_id} cancelled prior to cooking -> 100% refund ({cancel2_data['refund_amount_cents']} cents)")
+
+        # 7.2 Case B: Cancellation during COOKING -> 50% refund
+        client.post(
+            "http://localhost:8022/api/v1/cart/items",
+            headers={"x-user-id": user_info["user_id"]},
+            json={
+                "restaurant_id": restaurant_id,
+                "item_id": first_item["id"],
+                "name": first_item["name"],
+                "price_cents": first_item["price_cents"],
+                "quantity": 1
+            }
+        )
+        ord3_res = client.post(
+            "http://localhost:8022/api/v1/checkout",
+            headers={"x-user-id": user_info["user_id"]},
+            json={"delivery_address": "Podil, Kyiv"}
+        )
+        ord3_id = ord3_res.json()["order_id"]
+        ord3_total = ord3_res.json()["total_cents"]
+        # Merchant moves to COOKING
+        client.post(f"http://localhost:8020/api/v1/merchant/orders/{ord3_id}/accept")
+        client.post(f"http://localhost:8020/api/v1/merchant/orders/{ord3_id}/cooking")
+
+        cancel3_res = client.post(f"http://localhost:8022/api/v1/orders/{ord3_id}/cancel", json={"reason": "Took too long"})
+        assert cancel3_res.status_code == 200
+        cancel3_data = cancel3_res.json()
+        assert cancel3_data["refund_percentage"] == 50
+        assert cancel3_data["refund_amount_cents"] == int(ord3_total * 0.5)
+        print(f"  ✓ Case B passed: Order {ord3_id} cancelled during COOKING -> 50% refund ({cancel3_data['refund_amount_cents']} cents)")
+
+        # 7.3 Case C: Reject cancellation of DELIVERED order
+        cancel1_res = client.post(f"http://localhost:8022/api/v1/orders/{order_id}/cancel")
+        assert cancel1_res.status_code == 400
+        print(f"  ✓ Case C passed: Attempt to cancel DELIVERED order {order_id} was rejected with HTTP 400")
 
         # 9. Review Service
         print("\n--- 8. Review Service ---")
@@ -176,8 +265,9 @@ def main():
         assert rev_res.status_code == 200
         print(f"  ✓ Review recorded: rating={rev_res.json()['rating']}, comment='{rev_res.json()['comment']}'")
 
-        print("\n🎉 ALL 17 PURE FASTAPI SERVICES PASSED END-TO-END TEST 100%!")
+        print("\n🎉 ALL 17 PURE FASTAPI SERVICES PASSED END-TO-END TEST WITH FULL STATE MACHINE & REFUND RULES 100%!")
         return 0
+
 
     except Exception as e:
         print(f"\n❌ Test failed: {e}", file=sys.stderr)

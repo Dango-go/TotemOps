@@ -1,0 +1,251 @@
+namespaceOverride: "cnpg-system"
+replicaCount: 2
+
+image:
+  repository: ghcr.io/cloudnative-pg/cloudnative-pg
+  pullPolicy: IfNotPresent
+  tag: ""
+
+# list of image pull secrets for private registry
+imagePullSecrets: []
+
+nameOverride: "cnpg"
+fullnameOverride: "cnpg"
+
+commonLabels:
+  app.kubernetes.io/part-of: cnpg
+  app.kubernetes.io/component: operator
+
+commonAnnotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: true
+
+rbac:
+  create: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+podAnnotations: {}
+
+podLabels:
+  app.kubernetes.io/part-of: cnpg
+  app.kubernetes.io/component: operator
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: operator
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/component: operator
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/component: operator
+
+nodeSelector: {}
+
+tolerations: []
+
+priorityClassName: ""
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+terminationGracePeriodSeconds: 30
+
+livenessProbe:
+  enabled: true
+
+readinessProbe:
+  enabled: true
+
+webhook:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 443
+    annotations: {}
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      release: kube-prometheus-stack
+    annotations: {}
+    honorLabels: false
+
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: false
+  egress:
+    enabled: true
+
+podSecurityAdmission:
+  enabled: false
+
+config:
+  maxConcurrentReconciles: 3
+
+logging:
+  level: info
+
+leaderElection:
+  enabled: true
+
+controllerManager:
+  workers: 3
+
+operator:
+  watchNamespace: ""
+  leaderElection: true
+
+tls:
+  enabled: true
+  certManager:
+    enabled: true
+    issuerRef:
+      kind: ClusterIssuer
+      name: cluster-ca
+
+dnsPolicy: ClusterFirst
+
+dnsConfig: {}
+
+hostNetwork: false
+
+hostPID: false
+
+hostIPC: false
+
+volumes: []
+
+volumeMounts: []
+
+env: []
+
+extraContainers: []
+
+initContainers: []
+
+extraVolumes: []
+
+extraVolumeMounts: []
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+  labels: {}
+
+metrics:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+    labels: {}
+
+podMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: kube-prometheus-stack
+
+grafana:
+  dashboards:
+    enabled: true
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
+prometheusRule:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack
+  annotations: {}
+  rules: []
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  scheme: http
+  tlsConfig: {}
+  labels:
+    release: kube-prometheus-stack
+  relabelings: []
+  metricRelabelings: []
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+revisionHistoryLimit: 3
+
+startupProbe:
+  enabled: true
+
+terminationMessagePolicy: File
+
+extraLabels: {}
+
+extraAnnotations: {}
+
+schedulerName: default-scheduler
+
+runtimeClassName: ""
+
+preemptionPolicy: PreemptLowerPriority
+
+progressDeadlineSeconds: 600
+
+installCRDs: true
+
+keepCRDs: true
+
+cleanup:
+  enabled: false

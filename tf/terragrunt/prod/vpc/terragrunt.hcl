@@ -22,4 +22,5 @@ inputs = {
         "10.2.30.0/24"
     ]
     cluster_name = "totemops-prod-eks"
+    single_nat_gateway = false
 }

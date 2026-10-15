@@ -25,7 +25,7 @@ inputs = {
   subnet_ids = dependency.vpc.outputs.private_subnets
 
  
-  node_instance_types = ["t3.medium"]
+  node_instance_types = ["t3.large"]
   capacity_type       = "ON_DEMAND"
   min_size            = 2
   desired_size        = 2

@@ -80,24 +80,69 @@ docker build --build-arg SERVICE=bff-customer -t totemops-bff-customer:latest .
 ```
 
 
-# Technical features in the project
+## 🔐 Technical & Security Highlights
 
-Використовуємо OIDC.
+- **AWS IAM Roles for Service Accounts (IRSA / Pod Identity)**: Використання OpenID Connect (OIDC) для авторизації робочих навантажень (Jenkins, External Secrets, Ingress Controller) в AWS без збереження довгоживучих ключів (`AWS_ACCESS_KEY_ID`).
+- **Zero-Trust Networking**: Підтримка Service Mesh (Istio mTLS STRICT) та eBPF мережевих політик (Cilium).
+- **Shift-Left DevSecOps**: Повна автоматизація перевірок коду, залежностей, образів та Kubernetes-маніфестів до моменту деплою у кластер.
 
-# CI/CD
+---
 
-Атлантіс для IaC (Terraform / Terragrunt).
+## 🛠️ CI/CD & GitOps Architecture
 
-# CI 
-Використовуємо Jenkins який знаходиться у кластері для CI. В CI використовуємо найкращі практики devsecops.
-CI складається з 6 стейджів:
-1. Detect Changes
-2. Gitleaks (Secret Detection) + SAST
-3. Scan dependencies
-4. Lint & Unit Tests
-5. Containerization
-6. Image Scan
-7. kubeconform & kube-linter
-8. Update
+Платформа використовує розділений конвеєр доставки: **Atlantis** для інфраструктури, **Jenkins** для збірки й тестування, та **Argo CD** для безпосередньої доставки в Kubernetes.
 
-# CD
+```mermaid
+graph LR
+    Dev[Developer] -->|git push| Git[GitHub Monorepo]
+    
+    subgraph "IaC Pipeline"
+        Git -->|PR hook| Atl[Atlantis]
+        Atl -->|terragrunt plan/apply| EKS[AWS EKS Clusters]
+    end
+    
+    subgraph "Application CI (Jenkins)"
+        Git -->|webhook| Jnk[Jenkins Controller]
+        Jnk -->|ephemeral pod| Agent[K8s Agent]
+        Agent -->|1. Detect & SAST| Sast[Gitleaks & Semgrep]
+        Agent -->|2. Build & Scan| Img[BuildKit & Trivy]
+        Agent -->|3. Sign Image| Cosign[Cosign + AWS KMS]
+        Agent -->|4. Push Image| ECR[AWS ECR / Harbor]
+        Agent -->|5. Update Tag| GitOpsRepo[Git: cluster/apps/overlays/*]
+    end
+    
+    subgraph "Application CD (Argo CD)"
+        GitOpsRepo -->|GitOps Pull| Argo[Argo CD]
+        Argo -->|Sync & Self-Heal| Stage[EKS Stage Cluster]
+        Argo -->|Sync & Rollouts| Prod[EKS Prod Cluster]
+    end
+```
+
+### 1. IaC Automation (Atlantis)
+- **Terraform & Terragrunt** управління трьома ізольованими середовищами (`mgmt`, `stage`, `prod`).
+- Pull Request Workflow через **Atlantis**: виконання `atlantis plan` та `atlantis apply` безпосередньо з коментарів до PR.
+- Автоматична валідація коду інфраструктури: `tflint`, безпековий аудит `checkov` та прогнозування витрат через `infracost`.
+
+### 2. CI Engine (Jenkins DevSecOps Pipeline)
+Jenkins розгорнутий у менеджмент-кластері з конфігурацією як код (**JCasC**) та **Kubernetes Plugin**, що динамічно запускає ізольовані (ephemeral) воркер-поди під кожен білд.
+
+8-етапний DevSecOps конвеєр:
+1. **Detect Changes**: смарт-визначення змінених мікросервісів у monorepo (`git diff`).
+2. **Secret Detection & SAST**: детекція захардкодretux секретів через `Gitleaks` та статичний аналіз вразливостей коду через `Semgrep`.
+3. **Dependency Scanning & SBOM**: перевірка CVE у бібліотеках (`pip-audit`) та генерація Software Bill of Materials (`Syft`).
+4. **Lint & Unit Tests**: статична типізація, лінтинг коду та проходження тестів FastAPI (`pytest`).
+5. **Containerization**: безпечна rootless multi-stage збірка образів (`BuildKit`).
+6. **Image Vulnerability Scan & Signing**: сканування контейнера на CVE (`Trivy`) та накладання криптографічного цифрового підпису через `Cosign` із використанням ключів AWS KMS.
+7. **Manifest Validation**: валідація Kubernetes-маніфестів проти OpenAPI схем (`kubeconform`) та перевірка security best practices (`kube-linter`).
+8. **GitOps Manifest Update**: автоматичний комміт оновленого ECR-тегу (`newTag`) у відповідний Kustomize-оверлей (`cluster/apps/overlays/stage/kustomization.yaml`).
+
+### 3. CD Engine (Argo CD & GitOps)
+Доставка та синхронізація стану кластера реалізовані за принципами декларативного **GitOps**:
+- **Argo CD** розгорнутий у `totemops-mgmt-eks` та здійснює pull-модель доставки у цільові середовища (`stage`, `prod`).
+- **Kustomize Structure**:
+  - `cluster/apps/base/`: уніфіковані шаблони microservices (Deployment, Service, ConfigMap).
+  - `cluster/apps/overlays/stage/`: оверлей стейджингу (неймспейс `totem-stage`, ECR-теги, змінні середовища).
+  - `cluster/apps/overlays/prod/`: оверлей продакшну (неймспейс `totem-prod`, high availability конфігурації, ліміти ресурсів).
+- **Automated Sync & Self-Healing**: Argo CD автоматично виявляє зміни в Git після завершення CI, застосовує дельти, усуває дрифт конфігурації (`selfHeal: true`) та видаляє неактуальні ресурси (`prune: true`).
+- **Zero-Downtime Releases**: інтеграція з **Argo Rollouts** для прогресивного розгортання трафіку (Canary / Blue-Green) у зв'язці з Istio Service Mesh.
+

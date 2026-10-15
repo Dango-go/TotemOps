@@ -151,5 +151,18 @@ def get_order_tracking(order_id: str):
         order["courier_location"] = courier_loc
         return order
 
+class CancelCustomerOrderRequest(BaseModel):
+    reason: Optional[str] = "Customer requested cancellation"
+
+@app.post("/api/v1/orders/{order_id}/cancel")
+def cancel_order(order_id: str, req: Optional[CancelCustomerOrderRequest] = None):
+    reason = req.reason if req else "Customer requested cancellation"
+    with httpx.Client(timeout=3.0) as client:
+        res = client.post(f"{ORDER_URL}/api/v1/orders/{order_id}/cancel", json={"reason": reason})
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+

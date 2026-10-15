@@ -115,6 +115,43 @@ def capture_payment(payment_id: str):
         logger.info(f"Payment captured in DB: {payment_id}")
         return p
 
+class ChargePaymentRequest(BaseModel):
+    order_id: str
+    customer_id: str
+    amount_cents: int
+    currency: Optional[str] = "UAH"
+    payment_method: Optional[str] = "card"
+    idempotency_key: Optional[str] = None
+
+@app.post("/api/v1/payments/charge", response_model=PaymentSchema)
+def charge_payment(req: ChargePaymentRequest):
+    if req.amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    with SessionLocal() as db:
+        if req.idempotency_key:
+            existing = db.query(PaymentModel).filter(PaymentModel.idempotency_key == req.idempotency_key).first()
+            if existing:
+                logger.info(f"Returning idempotent charge {existing.payment_id}")
+                return existing
+
+        p = PaymentModel(
+            payment_id=f"pay-{uuid.uuid4().hex[:8]}",
+            order_id=req.order_id,
+            customer_id=req.customer_id,
+            amount_cents=req.amount_cents,
+            currency=req.currency or "UAH",
+            status="CAPTURED",
+            idempotency_key=req.idempotency_key,
+            created_at=int(time.time()),
+        )
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        logger.info(f"Payment charged directly in DB: {p.payment_id}, amount={p.amount_cents} cents")
+        return p
+
+
 @app.post("/api/v1/payments/{payment_id}/refund", response_model=PaymentSchema)
 def refund_payment(payment_id: str):
     with SessionLocal() as db:
